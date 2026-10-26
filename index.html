@@ -1,0 +1,2259 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Xadrez vs Computador</title>
+
+<style>
+*{
+    box-sizing:border-box;
+}
+
+html,body{
+    margin:0;
+    padding:0;
+    min-height:100%;
+}
+
+body{
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    background:#222;
+    font-family:Arial,sans-serif;
+    color:white;
+}
+
+.game{
+    width:100%;
+    max-width:760px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:12px;
+    padding:12px;
+}
+
+#status{
+    width:min(90vw,720px);
+    min-height:48px;
+    padding:12px 20px;
+    border-radius:10px;
+    background:#333;
+    font-size:19px;
+    font-weight:bold;
+    text-align:center;
+}
+
+.info{
+    width:min(90vw,720px);
+    display:flex;
+    justify-content:space-between;
+    gap:8px;
+}
+
+.info div{
+    background:#333;
+    padding:8px 12px;
+    border-radius:8px;
+    font-size:14px;
+}
+
+#board{
+    width:min(90vw,720px);
+    aspect-ratio:1/1;
+    display:grid;
+    grid-template-columns:repeat(8,1fr);
+    grid-template-rows:repeat(8,1fr);
+    border:8px solid #111;
+    box-shadow:0 10px 30px #000;
+    overflow:hidden;
+}
+
+.square{
+    width:100%;
+    height:100%;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    font-size:clamp(30px,8vw,70px);
+    line-height:1;
+    cursor:pointer;
+    user-select:none;
+}
+
+.light{
+    background:#f0d9b5;
+}
+
+.dark{
+    background:#b58863;
+}
+
+.selected{
+    background:#f6f669!important;
+}
+
+.possible{
+    box-shadow:inset 0 0 0 5px rgba(40,190,60,.75);
+}
+
+.capture{
+    box-shadow:inset 0 0 0 5px rgba(220,50,50,.85);
+}
+
+.check{
+    background:#e74c3c!important;
+}
+
+.white-piece{
+    color:white;
+    text-shadow:
+        2px 2px 2px #000,
+        -1px -1px 1px #000;
+}
+
+.black-piece{
+    color:#111;
+    text-shadow:1px 1px 1px #777;
+}
+
+#restart{
+    padding:10px 25px;
+    border:none;
+    border-radius:8px;
+    background:#eee;
+    color:#222;
+    font-size:16px;
+    cursor:pointer;
+}
+
+#restart:hover{
+    background:white;
+}
+
+@media(max-width:500px){
+    #board{
+        width:96vw;
+        border-width:5px;
+    }
+
+    .info div{
+        font-size:11px;
+        padding:7px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="game">
+
+    <div id="status">
+        Sua vez — Brancas
+    </div>
+
+    <div class="info">
+
+        <div id="movesInfo">
+            Jogadas: 0
+        </div>
+
+        <div>
+            👤 Você
+        </div>
+
+        <div>
+            🤖 IA ~2000
+        </div>
+
+    </div>
+
+    <div id="board"></div>
+
+    <button id="restart">
+        Novo jogo
+    </button>
+
+</div>
+
+<script>
+
+/* =========================================================
+   CONFIGURAÇÕES
+========================================================= */
+
+const board=document.getElementById("board");
+const status=document.getElementById("status");
+const movesInfo=document.getElementById("movesInfo");
+
+const pieces={
+    r:"♜",n:"♞",b:"♝",q:"♛",k:"♚",p:"♟",
+    R:"♖",N:"♘",B:"♗",Q:"♕",K:"♔",P:"♙"
+};
+
+const VALUE={
+    p:100,
+    n:320,
+    b:330,
+    r:500,
+    q:900,
+    k:20000
+};
+
+
+/* =========================================================
+   TABELAS DE POSIÇÃO
+========================================================= */
+
+const PAWN=[
+0,0,0,0,0,0,0,0,
+50,50,50,50,50,50,50,50,
+10,10,20,30,30,20,10,10,
+5,5,10,25,25,10,5,5,
+0,0,0,20,20,0,0,0,
+5,-5,-10,0,0,-10,-5,5,
+5,10,10,-20,-20,10,10,5,
+0,0,0,0,0,0,0,0
+];
+
+const KNIGHT=[
+-50,-40,-30,-30,-30,-30,-40,-50,
+-40,-20,0,0,0,0,-20,-40,
+-30,0,10,15,15,10,0,-30,
+-30,5,15,20,20,15,5,-30,
+-30,0,15,20,20,15,0,-30,
+-30,5,10,15,15,10,5,-30,
+-40,-20,0,5,5,0,-20,-40,
+-50,-40,-30,-30,-30,-30,-40,-50
+];
+
+const BISHOP=[
+-20,-10,-10,-10,-10,-10,-10,-20,
+-10,0,0,0,0,0,0,-10,
+-10,0,5,10,10,5,0,-10,
+-10,5,5,10,10,5,5,-10,
+-10,0,10,10,10,10,0,-10,
+-10,10,10,10,10,10,10,-10,
+-10,5,0,0,0,0,5,-10,
+-20,-10,-10,-10,-10,-10,-10,-20
+];
+
+const ROOK=[
+0,0,0,5,5,0,0,0,
+-5,0,0,0,0,0,0,-5,
+-5,0,0,0,0,0,0,-5,
+-5,0,0,0,0,0,0,-5,
+-5,0,0,0,0,0,0,-5,
+-5,0,0,0,0,0,0,-5,
+5,10,10,10,10,10,10,5,
+0,0,0,0,0,0,0,0
+];
+
+const QUEEN=[
+-20,-10,-10,-5,-5,-10,-10,-20,
+-10,0,0,0,0,0,0,-10,
+-10,0,5,5,5,5,0,-10,
+-5,0,5,5,5,5,0,-5,
+0,0,5,5,5,5,0,-5,
+-10,5,5,5,5,5,0,-10,
+-10,0,5,0,0,0,0,-10,
+-20,-10,-10,-5,-5,-10,-10,-20
+];
+
+const KING=[
+-30,-40,-40,-50,-50,-40,-40,-30,
+-30,-40,-40,-50,-50,-40,-40,-30,
+-30,-40,-40,-50,-50,-40,-40,-30,
+-30,-40,-40,-50,-50,-40,-40,-30,
+-20,-30,-30,-40,-40,-30,-30,-20,
+-10,-20,-20,-20,-20,-20,-20,-10,
+20,20,0,0,0,0,20,20,
+20,30,10,0,0,10,30,20
+];
+
+const TABLES={
+    p:PAWN,
+    n:KNIGHT,
+    b:BISHOP,
+    r:ROOK,
+    q:QUEEN,
+    k:KING
+};
+
+
+/* =========================================================
+   ESTADO
+========================================================= */
+
+let game;
+let turn;
+let selected=null;
+let gameOver=false;
+let thinking=false;
+let movesCount=0;
+
+
+/*
+   Direitos de roque:
+
+   K = rei branco pequeno
+   Q = rei branco grande
+   k = rei preto pequeno
+   q = rei preto grande
+*/
+
+let castleRights;
+
+
+/* =========================================================
+   NOVO JOGO
+========================================================= */
+
+function newGame(){
+
+    game=[
+        ["r","n","b","q","k","b","n","r"],
+        ["p","p","p","p","p","p","p","p"],
+        ["","","","","","","",""],
+        ["","","","","","","",""],
+        ["","","","","","","",""],
+        ["","","","","","","",""],
+        ["P","P","P","P","P","P","P","P"],
+        ["R","N","B","Q","K","B","N","R"]
+    ];
+
+    castleRights={
+        K:true,
+        Q:true,
+        k:true,
+        q:true
+    };
+
+    turn="white";
+    selected=null;
+    gameOver=false;
+    thinking=false;
+    movesCount=0;
+
+    updateCounter();
+    render();
+}
+
+
+/* =========================================================
+   FUNÇÕES BÁSICAS
+========================================================= */
+
+function isWhite(piece){
+    return !!piece &&
+           piece===piece.toUpperCase();
+}
+
+function isBlack(piece){
+    return !!piece &&
+           piece===piece.toLowerCase();
+}
+
+function sameColor(a,b){
+    return(
+        (isWhite(a)&&isWhite(b))||
+        (isBlack(a)&&isBlack(b))
+    );
+}
+
+function colorOf(piece){
+    return isWhite(piece)?"white":"black";
+}
+
+function cloneBoard(position){
+    return position.map(r=>[...r]);
+}
+
+function cloneRights(rights){
+    return {...rights};
+}
+
+
+/* =========================================================
+   RENDER
+========================================================= */
+
+function render(){
+
+    board.innerHTML="";
+
+    const checkColor=getCheckColor();
+
+    for(let row=0;row<8;row++){
+
+        for(let col=0;col<8;col++){
+
+            const square=document.createElement("div");
+
+            square.className=
+                "square "+
+                ((row+col)%2===0?"light":"dark");
+
+            const piece=game[row][col];
+
+            if(
+                piece &&
+                piece.toLowerCase()==="k" &&
+                colorOf(piece)===checkColor
+            ){
+                square.classList.add("check");
+            }
+
+            if(
+                selected &&
+                selected.row===row &&
+                selected.col===col
+            ){
+                square.classList.add("selected");
+            }
+
+            if(selected){
+
+                const moves=getLegalMoves(
+                    selected.row,
+                    selected.col
+                );
+
+                const possible=moves.some(
+                    m=>m.row===row&&m.col===col
+                );
+
+                if(possible){
+
+                    if(piece)
+                        square.classList.add("capture");
+                    else
+                        square.classList.add("possible");
+
+                }
+            }
+
+            if(piece){
+
+                square.textContent=pieces[piece];
+
+                square.classList.add(
+                    isWhite(piece)
+                    ?"white-piece"
+                    :"black-piece"
+                );
+            }
+
+            square.onclick=()=>{
+                clickSquare(row,col);
+            };
+
+            board.appendChild(square);
+        }
+    }
+
+    updateStatus();
+}
+
+
+/* =========================================================
+   CLIQUE DO JOGADOR
+========================================================= */
+
+function clickSquare(row,col){
+
+    if(
+        gameOver||
+        thinking||
+        turn!=="white"
+    ){
+        return;
+    }
+
+    const piece=game[row][col];
+
+    if(!selected){
+
+        if(piece&&isWhite(piece)){
+
+            selected={row,col};
+            render();
+
+        }
+
+        return;
+    }
+
+    const moves=getLegalMoves(
+        selected.row,
+        selected.col
+    );
+
+    const move=moves.find(
+        m=>m.row===row&&m.col===col
+    );
+
+    if(move){
+
+        executeMove(
+            {
+                from:selected,
+                to:move
+            }
+        );
+
+        selected=null;
+
+        movesCount++;
+        updateCounter();
+
+        turn="black";
+
+        checkGameState();
+        render();
+
+        if(!gameOver){
+
+            setTimeout(
+                computerMove,
+                40
+            );
+
+        }
+
+        return;
+    }
+
+    if(piece&&isWhite(piece)){
+
+        selected={row,col};
+        render();
+
+    }else{
+
+        selected=null;
+        render();
+
+    }
+}
+
+
+/* =========================================================
+   EXECUTAR MOVIMENTO
+========================================================= */
+
+function executeMove(move){
+
+    const fr=move.from.row;
+    const fc=move.from.col;
+    const tr=move.to.row;
+    const tc=move.to.col;
+
+    const piece=game[fr][fc];
+
+    /*
+       ROQUE
+    */
+
+    if(
+        piece.toLowerCase()==="k" &&
+        Math.abs(tc-fc)===2
+    ){
+
+        game[tr][tc]=piece;
+        game[fr][fc]="";
+
+        /*
+           Pequeno
+        */
+
+        if(tc===6){
+
+            const rook=game[fr][7];
+
+            game[fr][5]=rook;
+            game[fr][7]="";
+
+        }
+
+        /*
+           Grande
+        */
+
+        if(tc===2){
+
+            const rook=game[fr][0];
+
+            game[fr][3]=rook;
+            game[fr][0]="";
+
+        }
+
+    }else{
+
+        game[tr][tc]=piece;
+        game[fr][fc]="";
+
+    }
+
+    updateCastleRights(
+        move,
+        piece
+    );
+
+    /*
+       Promoção automática
+    */
+
+    if(
+        piece==="P"&&
+        tr===0
+    ){
+        game[tr][tc]="Q";
+    }
+
+    if(
+        piece==="p"&&
+        tr===7
+    ){
+        game[tr][tc]="q";
+    }
+}
+
+
+/* =========================================================
+   DIREITOS DE ROQUE
+========================================================= */
+
+function updateCastleRights(move,piece){
+
+    const fr=move.from.row;
+    const fc=move.from.col;
+    const tr=move.to.row;
+    const tc=move.to.col;
+
+    /*
+       Rei branco
+    */
+
+    if(piece==="K"){
+
+        castleRights.K=false;
+        castleRights.Q=false;
+    }
+
+    /*
+       Rei preto
+    */
+
+    if(piece==="k"){
+
+        castleRights.k=false;
+        castleRights.q=false;
+    }
+
+    /*
+       Torre branca
+    */
+
+    if(piece==="R"){
+
+        if(fr===7&&fc===0)
+            castleRights.Q=false;
+
+        if(fr===7&&fc===7)
+            castleRights.K=false;
+    }
+
+    /*
+       Torre preta
+    */
+
+    if(piece==="r"){
+
+        if(fr===0&&fc===0)
+            castleRights.q=false;
+
+        if(fr===0&&fc===7)
+            castleRights.k=false;
+    }
+
+    /*
+       Torre capturada
+    */
+
+    const captured=game[tr][tc];
+
+    if(captured==="R"){
+
+        if(tr===7&&tc===0)
+            castleRights.Q=false;
+
+        if(tr===7&&tc===7)
+            castleRights.K=false;
+    }
+
+    if(captured==="r"){
+
+        if(tr===0&&tc===0)
+            castleRights.q=false;
+
+        if(tr===0&&tc===7)
+            castleRights.k=false;
+    }
+}
+
+
+/* =========================================================
+   MOVIMENTOS BÁSICOS
+========================================================= */
+
+function getMoves(row,col,piece){
+
+    if(!piece)
+        return [];
+
+    const moves=[];
+    const white=isWhite(piece);
+    const type=piece.toLowerCase();
+
+    /*
+       PEÃO
+    */
+
+    if(type==="p"){
+
+        const direction=white?-1:1;
+        const startRow=white?6:1;
+
+        const one=row+direction;
+
+        if(
+            one>=0&&
+            one<8&&
+            game[one][col]===""
+        ){
+
+            moves.push({
+                row:one,
+                col
+            });
+
+            const two=row+direction*2;
+
+            if(
+                row===startRow&&
+                game[two][col]===""
+            ){
+
+                moves.push({
+                    row:two,
+                    col
+                });
+            }
+        }
+
+        for(const dc of [-1,1]){
+
+            const r=row+direction;
+            const c=col+dc;
+
+            if(
+                r>=0&&
+                r<8&&
+                c>=0&&
+                c<8&&
+                game[r][c]&&
+                !sameColor(
+                    piece,
+                    game[r][c]
+                )
+            ){
+
+                moves.push({
+                    row:r,
+                    col:c
+                });
+            }
+        }
+    }
+
+    /*
+       CAVALO
+    */
+
+    if(type==="n"){
+
+        const jumps=[
+            [-2,-1],[-2,1],
+            [-1,-2],[-1,2],
+            [1,-2],[1,2],
+            [2,-1],[2,1]
+        ];
+
+        jumps.forEach(([dr,dc])=>{
+
+            addMove(
+                row+dr,
+                col+dc,
+                piece,
+                moves
+            );
+
+        });
+    }
+
+    /*
+       REI
+    */
+
+    if(type==="k"){
+
+        for(let dr=-1;dr<=1;dr++){
+
+            for(let dc=-1;dc<=1;dc++){
+
+                if(dr!==0||dc!==0){
+
+                    addMove(
+                        row+dr,
+                        col+dc,
+                        piece,
+                        moves
+                    );
+
+                }
+            }
+        }
+
+        /*
+           ROQUE
+        */
+
+        const color=white?"white":"black";
+
+        const opponent=
+            color==="white"
+            ?"black"
+            :"white";
+
+        /*
+           Branco
+        */
+
+        if(color==="white"&&row===7&&col===4){
+
+            /*
+               Pequeno O-O
+            */
+
+            if(
+                castleRights.K&&
+                game[7][5]===""&&
+                game[7][6]===""&&
+                game[7][7]==="R"&&
+                !isSquareAttacked(7,4,opponent,game)&&
+                !isSquareAttacked(7,5,opponent,game)&&
+                !isSquareAttacked(7,6,opponent,game)
+            ){
+
+                moves.push({
+                    row:7,
+                    col:6,
+                    castle:true
+                });
+            }
+
+            /*
+               Grande O-O-O
+            */
+
+            if(
+                castleRights.Q&&
+                game[7][1]===""&&
+                game[7][2]===""&&
+                game[7][3]===""&&
+                game[7][0]==="R"&&
+                !isSquareAttacked(7,4,opponent,game)&&
+                !isSquareAttacked(7,3,opponent,game)&&
+                !isSquareAttacked(7,2,opponent,game)
+            ){
+
+                moves.push({
+                    row:7,
+                    col:2,
+                    castle:true
+                });
+            }
+        }
+
+        /*
+           Preto
+        */
+
+        if(color==="black"&&row===0&&col===4){
+
+            /*
+               Pequeno
+            */
+
+            if(
+                castleRights.k&&
+                game[0][5]===""&&
+                game[0][6]===""&&
+                game[0][7]==="r"&&
+                !isSquareAttacked(0,4,opponent,game)&&
+                !isSquareAttacked(0,5,opponent,game)&&
+                !isSquareAttacked(0,6,opponent,game)
+            ){
+
+                moves.push({
+                    row:0,
+                    col:6,
+                    castle:true
+                });
+            }
+
+            /*
+               Grande
+            */
+
+            if(
+                castleRights.q&&
+                game[0][1]===""&&
+                game[0][2]===""&&
+                game[0][3]===""&&
+                game[0][0]==="r"&&
+                !isSquareAttacked(0,4,opponent,game)&&
+                !isSquareAttacked(0,3,opponent,game)&&
+                !isSquareAttacked(0,2,opponent,game)
+            ){
+
+                moves.push({
+                    row:0,
+                    col:2,
+                    castle:true
+                });
+            }
+        }
+    }
+
+    /*
+       TORRE
+    */
+
+    if(type==="r"){
+
+        slide(
+            row,col,piece,moves,
+            [
+                [-1,0],[1,0],
+                [0,-1],[0,1]
+            ]
+        );
+    }
+
+    /*
+       BISPO
+    */
+
+    if(type==="b"){
+
+        slide(
+            row,col,piece,moves,
+            [
+                [-1,-1],[-1,1],
+                [1,-1],[1,1]
+            ]
+        );
+    }
+
+    /*
+       DAMA
+    */
+
+    if(type==="q"){
+
+        slide(
+            row,col,piece,moves,
+            [
+                [-1,0],[1,0],
+                [0,-1],[0,1],
+                [-1,-1],[-1,1],
+                [1,-1],[1,1]
+            ]
+        );
+    }
+
+    return moves;
+}
+
+
+/* =========================================================
+   ADD MOVE
+========================================================= */
+
+function addMove(row,col,piece,moves){
+
+    if(
+        row<0||row>=8||
+        col<0||col>=8
+    )
+        return;
+
+    const target=game[row][col];
+
+    if(
+        !target||
+        !sameColor(piece,target)
+    ){
+
+        moves.push({
+            row,
+            col
+        });
+    }
+}
+
+
+/* =========================================================
+   SLIDE
+========================================================= */
+
+function slide(
+    row,
+    col,
+    piece,
+    moves,
+    directions
+){
+
+    for(const [dr,dc] of directions){
+
+        let r=row+dr;
+        let c=col+dc;
+
+        while(
+            r>=0&&r<8&&
+            c>=0&&c<8
+        ){
+
+            const target=game[r][c];
+
+            if(!target){
+
+                moves.push({
+                    row:r,
+                    col:c
+                });
+
+            }else{
+
+                if(
+                    !sameColor(
+                        piece,
+                        target
+                    )
+                ){
+
+                    moves.push({
+                        row:r,
+                        col:c
+                    });
+
+                }
+
+                break;
+            }
+
+            r+=dr;
+            c+=dc;
+        }
+    }
+}
+
+
+/* =========================================================
+   REI
+========================================================= */
+
+function findKing(color,position=game){
+
+    const king=
+        color==="white"?"K":"k";
+
+    for(let r=0;r<8;r++){
+
+        for(let c=0;c<8;c++){
+
+            if(position[r][c]===king){
+
+                return{
+                    row:r,
+                    col:c
+                };
+            }
+        }
+    }
+
+    return null;
+}
+
+
+/* =========================================================
+   CASA ATACADA
+========================================================= */
+
+function isSquareAttacked(
+    row,
+    col,
+    byColor,
+    position=game
+){
+
+    for(let r=0;r<8;r++){
+
+        for(let c=0;c<8;c++){
+
+            const piece=position[r][c];
+
+            if(!piece)
+                continue;
+
+            if(
+                colorOf(piece)!==byColor
+            )
+                continue;
+
+            const type=piece.toLowerCase();
+
+            /*
+               PEÃO
+            */
+
+            if(type==="p"){
+
+                const direction=
+                    byColor==="white"?-1:1;
+
+                if(
+                    r+direction===row&&
+                    Math.abs(c-col)===1
+                ){
+                    return true;
+                }
+            }
+
+            /*
+               CAVALO
+            */
+
+            if(type==="n"){
+
+                const jumps=[
+                    [-2,-1],[-2,1],
+                    [-1,-2],[-1,2],
+                    [1,-2],[1,2],
+                    [2,-1],[2,1]
+                ];
+
+                for(const [dr,dc] of jumps){
+
+                    if(
+                        r+dr===row&&
+                        c+dc===col
+                    ){
+                        return true;
+                    }
+                }
+            }
+
+            /*
+               REI
+            */
+
+            if(type==="k"){
+
+                if(
+                    Math.abs(r-row)<=1&&
+                    Math.abs(c-col)<=1
+                ){
+                    return true;
+                }
+            }
+
+            let directions=[];
+
+            if(type==="r"){
+
+                directions=[
+                    [-1,0],[1,0],
+                    [0,-1],[0,1]
+                ];
+            }
+
+            if(type==="b"){
+
+                directions=[
+                    [-1,-1],[-1,1],
+                    [1,-1],[1,1]
+                ];
+            }
+
+            if(type==="q"){
+
+                directions=[
+                    [-1,0],[1,0],
+                    [0,-1],[0,1],
+                    [-1,-1],[-1,1],
+                    [1,-1],[1,1]
+                ];
+            }
+
+            for(
+                const [dr,dc]
+                of directions
+            ){
+
+                let rr=r+dr;
+                let cc=c+dc;
+
+                while(
+                    rr>=0&&rr<8&&
+                    cc>=0&&cc<8
+                ){
+
+                    if(
+                        rr===row&&
+                        cc===col
+                    ){
+                        return true;
+                    }
+
+                    if(position[rr][cc])
+                        break;
+
+                    rr+=dr;
+                    cc+=dc;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+
+/* =========================================================
+   XEQUE
+========================================================= */
+
+function isInCheck(
+    color,
+    position=game
+){
+
+    const king=findKing(
+        color,
+        position
+    );
+
+    if(!king)
+        return true;
+
+    const opponent=
+        color==="white"
+        ?"black"
+        :"white";
+
+    return isSquareAttacked(
+        king.row,
+        king.col,
+        opponent,
+        position
+    );
+}
+
+
+/* =========================================================
+   MOVIMENTOS LEGAIS
+========================================================= */
+
+function getLegalMoves(row,col){
+
+    const piece=game[row][col];
+
+    if(!piece)
+        return [];
+
+    const color=colorOf(piece);
+
+    const moves=getMoves(
+        row,col,piece
+    );
+
+    const legal=[];
+
+    for(const move of moves){
+
+        const next=
+            makeTemporaryState({
+                from:{row,col},
+                to:move
+            });
+
+        if(
+            !isInCheck(
+                color,
+                next.board
+            )
+        ){
+
+            legal.push(move);
+
+        }
+    }
+
+    return legal;
+}
+
+
+/* =========================================================
+   ESTADO TEMPORÁRIO
+========================================================= */
+
+function makeTemporaryState(move){
+
+    const position=
+        cloneBoard(game);
+
+    const rights=
+        cloneRights(castleRights);
+
+    const fr=move.from.row;
+    const fc=move.from.col;
+    const tr=move.to.row;
+    const tc=move.to.col;
+
+    const piece=position[fr][fc];
+
+    /*
+       Roque
+    */
+
+    if(
+        piece.toLowerCase()==="k"&&
+        Math.abs(tc-fc)===2
+    ){
+
+        position[tr][tc]=piece;
+        position[fr][fc]="";
+
+        if(tc===6){
+
+            position[fr][5]=
+                position[fr][7];
+
+            position[fr][7]="";
+
+        }else if(tc===2){
+
+            position[fr][3]=
+                position[fr][0];
+
+            position[fr][0]="";
+        }
+
+    }else{
+
+        position[tr][tc]=piece;
+        position[fr][fc]="";
+
+    }
+
+    /*
+       Promoção
+    */
+
+    if(piece==="P"&&tr===0)
+        position[tr][tc]="Q";
+
+    if(piece==="p"&&tr===7)
+        position[tr][tc]="q";
+
+    /*
+       Direitos
+    */
+
+    updateRightsForState(
+        rights,
+        move,
+        piece,
+        game[tr][tc]
+    );
+
+    return{
+        board:position,
+        rights
+    };
+}
+
+
+/* =========================================================
+   DIREITOS TEMPORÁRIOS
+========================================================= */
+
+function updateRightsForState(
+    rights,
+    move,
+    piece,
+    captured
+){
+
+    const fr=move.from.row;
+    const fc=move.from.col;
+    const tr=move.to.row;
+    const tc=move.to.col;
+
+    if(piece==="K"){
+        rights.K=false;
+        rights.Q=false;
+    }
+
+    if(piece==="k"){
+        rights.k=false;
+        rights.q=false;
+    }
+
+    if(piece==="R"){
+
+        if(fr===7&&fc===0)
+            rights.Q=false;
+
+        if(fr===7&&fc===7)
+            rights.K=false;
+    }
+
+    if(piece==="r"){
+
+        if(fr===0&&fc===0)
+            rights.q=false;
+
+        if(fr===0&&fc===7)
+            rights.k=false;
+    }
+
+    if(captured==="R"){
+
+        if(tr===7&&tc===0)
+            rights.Q=false;
+
+        if(tr===7&&tc===7)
+            rights.K=false;
+    }
+
+    if(captured==="r"){
+
+        if(tr===0&&tc===0)
+            rights.q=false;
+
+        if(tr===0&&tc===7)
+            rights.k=false;
+    }
+}
+
+
+/* =========================================================
+   TODOS OS MOVIMENTOS
+========================================================= */
+
+function allLegalMoves(
+    color,
+    position=game,
+    rights=castleRights
+){
+
+    const oldGame=game;
+    const oldRights=castleRights;
+
+    game=position;
+    castleRights=rights;
+
+    const result=[];
+
+    for(let r=0;r<8;r++){
+
+        for(let c=0;c<8;c++){
+
+            const piece=game[r][c];
+
+            if(
+                !piece||
+                colorOf(piece)!==color
+            )
+                continue;
+
+            const moves=getLegalMoves(r,c);
+
+            for(const move of moves){
+
+                result.push({
+                    from:{
+                        row:r,
+                        col:c
+                    },
+                    to:{
+                        row:move.row,
+                        col:move.col
+                    },
+                    castle:!!move.castle
+                });
+            }
+        }
+    }
+
+    game=oldGame;
+    castleRights=oldRights;
+
+    return result;
+}
+
+
+/* =========================================================
+   APLICA MOVIMENTO PARA IA
+========================================================= */
+
+function applyMove(
+    position,
+    rights,
+    move
+){
+
+    const board=cloneBoard(position);
+    const newRights=cloneRights(rights);
+
+    const fr=move.from.row;
+    const fc=move.from.col;
+    const tr=move.to.row;
+    const tc=move.to.col;
+
+    const piece=board[fr][fc];
+    const captured=board[tr][tc];
+
+    if(
+        piece.toLowerCase()==="k"&&
+        Math.abs(tc-fc)===2
+    ){
+
+        board[tr][tc]=piece;
+        board[fr][fc]="";
+
+        if(tc===6){
+
+            board[fr][5]=board[fr][7];
+            board[fr][7]="";
+
+        }else{
+
+            board[fr][3]=board[fr][0];
+            board[fr][0]="";
+
+        }
+
+    }else{
+
+        board[tr][tc]=piece;
+        board[fr][fc]="";
+    }
+
+    if(piece==="P"&&tr===0)
+        board[tr][tc]="Q";
+
+    if(piece==="p"&&tr===7)
+        board[tr][tc]="q";
+
+    updateRightsForState(
+        newRights,
+        move,
+        piece,
+        captured
+    );
+
+    return{
+        board,
+        rights:newRights
+    };
+}
+
+
+/* =========================================================
+   AVALIAÇÃO
+========================================================= */
+
+function positionalValue(
+    piece,
+    row,
+    col
+){
+
+    const table=
+        TABLES[piece.toLowerCase()];
+
+    if(!table)
+        return 0;
+
+    let index=row*8+col;
+
+    if(isBlack(piece))
+        index=(7-row)*8+col;
+
+    return table[index];
+}
+
+
+function evaluateBoard(position){
+
+    let score=0;
+
+    let whiteBishops=0;
+    let blackBishops=0;
+
+    let whitePawns=[];
+    let blackPawns=[];
+
+    for(let r=0;r<8;r++){
+
+        for(let c=0;c<8;c++){
+
+            const piece=position[r][c];
+
+            if(!piece)
+                continue;
+
+            const type=piece.toLowerCase();
+
+            let value=
+                VALUE[type]+
+                positionalValue(
+                    piece,r,c
+                );
+
+            if(type==="b"){
+
+                if(isWhite(piece))
+                    whiteBishops++;
+                else
+                    blackBishops++;
+            }
+
+            if(type==="p"){
+
+                if(isWhite(piece))
+                    whitePawns.push({row:r,col:c});
+                else
+                    blackPawns.push({row:r,col:c});
+            }
+
+            if(isBlack(piece))
+                score+=value;
+            else
+                score-=value;
+        }
+    }
+
+    /*
+       Par de bispos
+    */
+
+    if(blackBishops>=2)
+        score+=35;
+
+    if(whiteBishops>=2)
+        score-=35;
+
+    /*
+       Peões dobrados
+    */
+
+    for(let col=0;col<8;col++){
+
+        const bp=
+            blackPawns.filter(
+                p=>p.col===col
+            ).length;
+
+        const wp=
+            whitePawns.filter(
+                p=>p.col===col
+            ).length;
+
+        if(bp>1)
+            score-=15*(bp-1);
+
+        if(wp>1)
+            score+=15*(wp-1);
+    }
+
+    /*
+       Controle do centro
+    */
+
+    const centers=[
+        [3,3],
+        [3,4],
+        [4,3],
+        [4,4]
+    ];
+
+    for(const [r,c] of centers){
+
+        const piece=position[r][c];
+
+        if(piece){
+
+            if(isBlack(piece))
+                score+=12;
+
+            else
+                score-=12;
+        }
+    }
+
+    /*
+       Segurança dos reis
+    */
+
+    if(isInCheck("black",position))
+        score-=50;
+
+    if(isInCheck("white",position))
+        score+=50;
+
+    return score;
+}
+
+
+/* =========================================================
+   ORDENAÇÃO DE JOGADAS
+========================================================= */
+
+function scoreMove(
+    position,
+    move
+){
+
+    const moving=
+        position[
+            move.from.row
+        ][
+            move.from.col
+        ];
+
+    const captured=
+        position[
+            move.to.row
+        ][
+            move.to.col
+        ];
+
+    let score=0;
+
+    /*
+       Captura
+    */
+
+    if(captured){
+
+        score+=
+            10*VALUE[
+                captured.toLowerCase()
+            ]-
+            VALUE[
+                moving.toLowerCase()
+            ];
+    }
+
+    /*
+       Roque
+    */
+
+    if(move.castle)
+        score+=60;
+
+    /*
+       Promoção
+    */
+
+    if(
+        moving.toLowerCase()==="p"&&
+        (
+            move.to.row===0||
+            move.to.row===7
+        )
+    ){
+        score+=900;
+    }
+
+    /*
+       Centro
+    */
+
+    if(
+        move.to.row>=2&&
+        move.to.row<=5&&
+        move.to.col>=2&&
+        move.to.col<=5
+    ){
+        score+=15;
+    }
+
+    return score;
+}
+
+
+function orderMoves(
+    position,
+    moves
+){
+
+    return moves.sort(
+        (a,b)=>
+            scoreMove(position,b)-
+            scoreMove(position,a)
+    );
+}
+
+
+/* =========================================================
+   MINIMAX RÁPIDO
+========================================================= */
+
+function minimax(
+    position,
+    rights,
+    depth,
+    alpha,
+    beta,
+    maximizing
+){
+
+    const color=
+        maximizing
+        ?"black"
+        :"white";
+
+    const moves=
+        allLegalMoves(
+            color,
+            position,
+            rights
+        );
+
+    /*
+       Fim da partida
+    */
+
+    if(moves.length===0){
+
+        if(
+            isInCheck(
+                color,
+                position
+            )
+        ){
+
+            return maximizing
+                ?-1000000-depth
+                :1000000+depth;
+        }
+
+        return 0;
+    }
+
+    /*
+       Folha
+    */
+
+    if(depth<=0){
+
+        return evaluateBoard(
+            position
+        );
+    }
+
+    orderMoves(
+        position,
+        moves
+    );
+
+    if(maximizing){
+
+        let best=-Infinity;
+
+        for(const move of moves){
+
+            const next=
+                applyMove(
+                    position,
+                    rights,
+                    move
+                );
+
+            const value=
+                minimax(
+                    next.board,
+                    next.rights,
+                    depth-1,
+                    alpha,
+                    beta,
+                    false
+                );
+
+            best=Math.max(
+                best,
+                value
+            );
+
+            alpha=Math.max(
+                alpha,
+                best
+            );
+
+            if(beta<=alpha)
+                break;
+        }
+
+        return best;
+    }
+
+    let best=Infinity;
+
+    for(const move of moves){
+
+        const next=
+            applyMove(
+                position,
+                rights,
+                move
+            );
+
+        const value=
+            minimax(
+                next.board,
+                next.rights,
+                depth-1,
+                alpha,
+                beta,
+                true
+            );
+
+        best=Math.min(
+            best,
+            value
+        );
+
+        beta=Math.min(
+            beta,
+            best
+        );
+
+        if(beta<=alpha)
+            break;
+    }
+
+    return best;
+}
+
+
+/* =========================================================
+   IA
+========================================================= */
+
+function chooseComputerMove(){
+
+    const moves=
+        allLegalMoves(
+            "black",
+            game,
+            castleRights
+        );
+
+    if(!moves.length)
+        return null;
+
+    orderMoves(
+        game,
+        moves
+    );
+
+    /*
+       Profundidade 3:
+       rápida no navegador.
+
+       Capturas e xeques ficam
+       priorizados pela ordenação.
+    */
+
+    const DEPTH=3;
+
+    let bestScore=-Infinity;
+
+    let bestMoves=[];
+
+    for(const move of moves){
+
+        const next=
+            applyMove(
+                game,
+                castleRights,
+                move
+            );
+
+        const score=
+            minimax(
+                next.board,
+                next.rights,
+                DEPTH-1,
+                -Infinity,
+                Infinity,
+                false
+            );
+
+        if(score>bestScore){
+
+            bestScore=score;
+            bestMoves=[move];
+
+        }else if(score===bestScore){
+
+            bestMoves.push(move);
+        }
+    }
+
+    return bestMoves[
+        Math.floor(
+            Math.random()*bestMoves.length
+        )
+    ];
+}
+
+
+/* =========================================================
+   JOGADA DO COMPUTADOR
+========================================================= */
+
+function computerMove(){
+
+    if(
+        gameOver||
+        turn!=="black"
+    )
+        return;
+
+    thinking=true;
+
+    status.textContent=
+        "🤖 Computador pensando...";
+
+    /*
+       Pequeno atraso apenas para
+       permitir que o navegador
+       atualize a mensagem.
+    */
+
+    setTimeout(()=>{
+
+        if(gameOver)
+            return;
+
+        const move=
+            chooseComputerMove();
+
+        if(!move){
+
+            thinking=false;
+
+            checkGameState();
+            render();
+
+            return;
+        }
+
+        executeMove(move);
+
+        movesCount++;
+
+        updateCounter();
+
+        turn="white";
+
+        thinking=false;
+
+        checkGameState();
+        render();
+
+    },30);
+}
+
+
+/* =========================================================
+   XEQUE / MATE / EMPATE
+========================================================= */
+
+function getCheckColor(){
+
+    if(isInCheck("white"))
+        return "white";
+
+    if(isInCheck("black"))
+        return "black";
+
+    return null;
+}
+
+
+function checkGameState(){
+
+    const inCheck=
+        isInCheck(turn);
+
+    const moves=
+        allLegalMoves(
+            turn,
+            game,
+            castleRights
+        );
+
+    /*
+       XEQUE-MATE
+    */
+
+    if(
+        moves.length===0&&
+        inCheck
+    ){
+
+        gameOver=true;
+
+        if(turn==="white"){
+
+            status.textContent=
+                "♚ XEQUE-MATE! O computador venceu!";
+
+        }else{
+
+            status.textContent=
+                "♚ XEQUE-MATE! Você venceu!";
+
+        }
+
+        return;
+    }
+
+    /*
+       EMPATE POR AFOGAMENTO
+    */
+
+    if(
+        moves.length===0&&
+        !inCheck
+    ){
+
+        gameOver=true;
+
+        status.textContent=
+            "⚖ EMPATE! Afogamento.";
+
+        return;
+    }
+
+    /*
+       XEQUE
+    */
+
+    if(inCheck){
+
+        if(turn==="white"){
+
+            status.textContent=
+                "⚠ XEQUE! Sua vez — Brancas";
+
+        }else{
+
+            status.textContent=
+                "⚠ XEQUE! Computador pensando...";
+
+        }
+
+        return;
+    }
+
+    updateStatus();
+}
+
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+function updateStatus(){
+
+    if(gameOver)
+        return;
+
+    if(turn==="white"){
+
+        if(isInCheck("white")){
+
+            status.textContent=
+                "⚠ XEQUE! Sua vez — Brancas";
+
+        }else{
+
+            status.textContent=
+                "Sua vez — Brancas";
+
+        }
+
+    }else{
+
+        status.textContent=
+            "🤖 Computador pensando...";
+
+    }
+}
+
+
+/* =========================================================
+   CONTADOR
+========================================================= */
+
+function updateCounter(){
+
+    movesInfo.textContent=
+        "Jogadas: "+
+        movesCount;
+}
+
+
+/* =========================================================
+   NOVO JOGO
+========================================================= */
+
+document
+    .getElementById("restart")
+    .addEventListener(
+        "click",
+        newGame
+    );
+
+newGame();
+
+</script>
+
+</body>
+</html>
